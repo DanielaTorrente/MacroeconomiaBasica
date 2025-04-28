@@ -50,7 +50,34 @@ DF = pd.DataFrame({
 # 2. Streamlit — configuración
 # ------------------------------------------------------------
 st.set_page_config(page_title="Simulador Macro 2022-2024", layout="wide")
-st.title("Simulador Macroeconómico (ene‑2022 → ene‑2024)")
+st.title("🌎 Tablero Interactivo de Indicadores (2022‑2024)")
+
+st.markdown("""
+### Definiciones rápidas
+| Sigla | Descripción | Fuente |
+|-------|-------------|--------|
+| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria del PIB. | INDEC |
+| **IPC** | Índice de Precios al Consumidor; mide la variación mes a mes del nivel general de precios. | INDEC |
+| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar estadounidense). | BCRA |
+| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; compara el peso frente a las monedas de los principales socios comerciales. | BCRA |
+
+---
+### Cómo usar este tablero
+1. **Exploración**: elige un indicador para ver su serie 2022‑2024.
+2. **Simulador**: aplica shocks porcentuales a IPC, TCN e ITCRM y observa el impacto estimado sobre el EMAE (PBI).
+3. **Descarga**: puedes exportar la tabla filtrada desde la vista de exploración.
+
+> ⚠️ *Este tablero es didáctico.* El modelo lineal no implica causalidad y omite rezagos.
+""")
+### Definiciones rápidas
+| Sigla | Descripción | Fuente |
+|-------|-------------|--------|
+| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria del PIB. | INDEC |
+| **IPC** | Índice de Precios al Consumidor; mide la variación mes a mes del nivel general de precios. | INDEC |
+| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar estadounidense). | BCRA |
+| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; compara el peso frente a las monedas de los principales socios comerciales. | BCRA |
+""")
+"Simulador Macroeconómico (ene‑2022 → ene‑2024)")
 
 st.markdown(
     """
@@ -109,3 +136,13 @@ else:
     st.plotly_chart(fig2, use_container_width=True)
 
     st.info("Ejemplo didáctico — interpretaciones con cautela.")
+
+# -------- Consignas para reflexionar -------------------------
+st.markdown("""
+### ✏️ Consignas de análisis
+1. ¿Qué patrón observas en la trayectoria del EMAE entre 2022 y 2024?
+2. ¿Cómo reacciona el EMAE en el simulador ante un aumento sostenido del IPC?
+3. ¿Qué sucede si devalúas 15 % el TCN manteniendo constante el IPC? ¿Y si apreciás el ITCRM?
+4. Relaciona la evolución del ITCRM con los picos de inflación: ¿encuentras coincidencias notables?
+5. Propón un shock combinado (IPC + TCN) y discute si el resultado del EMAE te parece plausible.
+""")
