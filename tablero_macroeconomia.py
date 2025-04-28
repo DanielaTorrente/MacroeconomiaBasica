@@ -138,4 +138,3 @@ st.markdown("""
 5. ¿Qué eventos económicos podrían explicar los cambios observados?
 ---
 """)
-
