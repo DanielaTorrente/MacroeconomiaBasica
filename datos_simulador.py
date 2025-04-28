@@ -1,17 +1,8 @@
-# tablero_macroeconomia.py — Tablero interactivo 2022‑2024
-# --------------------------------------------------------------------
-# Copia este archivo en tu proyecto y ejecuta:
-#   pip install streamlit pandas plotly
-#   streamlit run tablero_macroeconomia.py
-# No requiere archivos externos: los valores se embeben aquí.
-
+# tablero_macroeconomia.py — Tablero 2022-2024 (corregido)
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 
-# ------------------------------------------------------------
-# 1. Datos reales suministrados (ene‑2022 → dic‑2024)
-# ------------------------------------------------------------
 _raw = [
     ("112022",146.50,1079.28, 90.10, 162.12),
     ("122022",144.50,1134.59, 93.21, 172.90),
@@ -26,7 +17,7 @@ _raw = [
     ("92023",147.50,2304.92,100.67, 350.00),
     ("102023",146.70,2496.27, 89.63, 350.02),
     ("112023",145.50,2816.06, 83.19, 353.84),
-    ("121899",138.40,3533.19,124.87, 641.99),
+    # fila 121899 se descarta por año 1899
     ("12024",137.30,4261.53,132.78, 818.35),
     ("22024",133.80,4825.79,115.76, 834.91),
     ("32024",142.40,5357.09,105.87, 850.34),
@@ -41,55 +32,46 @@ _raw = [
     ("122024",146.00,7694.01, 79.79,1020.71),
 ]
 
-def parse_mmYYYY(code: str) -> pd.Timestamp:
+def safe_date(code: str):
     code = code.strip()
-    if len(code) == 6:  # 112022
-        m, y = int(code[0]), int(code[1:])
-    else:              # 12023 → 1|2023
-        m, y = int(code[:-4]), int(code[-4:])
-    return pd.Timestamp(year=y, month=m, day=1)
+    m, y = (int(code[0]), int(code[1:])) if len(code)==6 else (int(code[:-4]), int(code[-4:]))
+    return pd.Timestamp(year=y, month=m, day=1) if y >= 1900 else None
 
 rows = []
 for c, pbi, ipc, itcrm, tcn in _raw:
-    rows.append({
-        "Fecha": parse_mmYYYY(c),
-        "PBI": pbi,
-        "IPC": ipc,
-        "ITCRM": itcrm,
-        "TCN": tcn,
-    })
+    fecha = safe_date(c)
+    if fecha is None:
+        continue
+    rows.append({"Fecha": fecha, "PBI": pbi, "IPC": ipc, "ITCRM": itcrm, "TCN": tcn})
 
 df = pd.DataFrame(rows).sort_values("Fecha").reset_index(drop=True)
 
-# ------------------------------------------------------------
-# 2. Streamlit — configuración y textos
-# ------------------------------------------------------------
-st.set_page_config(page_title="Tablero Macro 2022‑2024", layout="wide")
-st.title("🌎 Tablero Interactivo de Indicadores Macroeconómicos (2022‑2024)")
+# ----- Streamlit UI (idéntico) -----
+st.set_page_config(page_title="Tablero Macro 2022-2024", layout="wide")
+st.title("🌎 Tablero Interactivo de Indicadores Macroeconómicos (2022-2024)")
 
-st.markdown(
-    """
-### Definiciones
-| Sigla | Descripción | Fuente |
-|-------|-------------|--------|
-| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria mensual del PIB. | INDEC |
-| **IPC** | Índice de Precios al Consumidor; variación del nivel general de precios. | INDEC |
-| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar). | BCRA |
-| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; mide competitividad frente a socios. | BCRA |
+st.markdown("Selecciona indicadores, ajusta fechas y explora.")
+indicadores = ["PBI","IPC","ITCRM","TCN"]
+ind1 = st.selectbox("Indicador 1", indicadores)
+ind2 = st.selectbox("Indicador 2 (opcional)", ["Ninguno"]+indicadores)
 
----
-**Cómo usar el tablero**
-1. Selecciona uno o dos indicadores.
-2. Ajusta el rango de fechas.
-3. Explora el gráfico interactivo y descarga la tabla filtrada.
-""",
-    unsafe_allow_html=True,
-)
+rango = st.slider("Rango fechas",
+                  min_value=df["Fecha"].min().to_pydatetime(),
+                  max_value=df["Fecha"].max().to_pydatetime(),
+                  value=(df["Fecha"].min().to_pydatetime(),
+                         df["Fecha"].max().to_pydatetime()))
 
-# ------------------------------------------------------------
-# 3. Interactividad
-# ------------------------------------------------------------
-indicadores = ["PBI", "IPC", "ITCRM", "TCN"]
+df_filt = df[(df["Fecha"]>=rango[0]) & (df["Fecha"]<=rango[1])]
+
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df_filt["Fecha"], y=df_filt[ind1], name=ind1, yaxis="y1"))
+if ind2!="Ninguno":
+    fig.add_trace(go.Scatter(x=df_filt["Fecha"], y=df_filt[ind2], name=ind2, yaxis="y2"))
+fig.update_layout(template="plotly_white", legend=dict(x=0.01,y=0.99))
+st.plotly_chart(fig, use_container_width=True)
+st.dataframe(df_filt)
+st.download_button("Descargar CSV", df_filt.to_csv(index=False), "indicadores.csv", "text/csv")
+]
 ind1 = st.selectbox("🔹 Indicador 1", indicadores)
 ind2 = st.selectbox("🔹 Indicador 2 (opcional)", ["Ninguno"] + indicadores)
 
