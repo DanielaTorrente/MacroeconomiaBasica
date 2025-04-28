@@ -59,7 +59,10 @@ def traer_serie_csv(serie_id: str) -> pd.DataFrame:
         st.error(f"No se pudo descargar la serie {serie_id}: {e}")
         return pd.DataFrame(columns=["fecha", "valor"])
     df.rename(columns={"indice_tiempo": "fecha", serie_id: "valor"}, inplace=True)
-    return df.dropna()
+    # Asegurar numérico
+    df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
+    df.dropna(subset=["valor"], inplace=True)
+    return df
 
 @st.cache_data(ttl=86_400)
 def cargar_datos(ind):
@@ -112,6 +115,10 @@ inicio, fin = st.slider(
 # ---------------------------------------------------------------------------
 mask = (df["fecha"] >= pd.to_datetime(inicio)) & (df["fecha"] <= pd.to_datetime(fin))
 subset = df.loc[mask]
+
+if subset.empty:
+    st.warning("No hay datos para el rango seleccionado. Probá ampliar el período.")
+    st.stop()
 
 fig = px.line(subset, x="fecha", y="valor",
               title=f"{indicador} – {inicio.strftime('%Y-%m')} a {fin.strftime('%Y-%m')}",
