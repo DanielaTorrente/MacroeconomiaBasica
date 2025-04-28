@@ -2,11 +2,14 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
+from urllib.error import HTTPError
 from datetime import datetime
 
 st.set_page_config(page_title="Tablero Macroeconómico – Unidad 1", layout="wide")
 
-# ----- Definiciones ---------------------------------------------------------- #
+# ---------------------------------------------------------------------------
+# DEFINICIONES
+# ---------------------------------------------------------------------------
 DEFINICIONES = {
     "Producto interno bruto (PBI)": "Bienes y servicios de demanda final producidos dentro de una economía durante un periodo determinado (generalmente un año).",
     "Inflación": "Aumento sostenido en el tiempo del nivel general de precios.",
@@ -14,83 +17,108 @@ DEFINICIONES = {
     "Tipo de cambio": "Cantidad de unidades de moneda nacional necesarias para obtener una unidad de moneda extranjera."
 }
 
-# Sidebar – Selección de indicador
-st.sidebar.title("Indicadores")
-indicador = st.sidebar.radio(
-    "Elegí un indicador",
-    list(DEFINICIONES.keys())
-)
-
-# Sidebar – Definición
-st.sidebar.markdown("### Definición")
-st.sidebar.info(DEFINICIONES[indicador])
-
-# Sidebar – Instrucciones
-st.sidebar.markdown("### Instrucciones")
-st.sidebar.markdown(
+# ---------------------------------------------------------------------------
+# BARRA LATERAL
+# ---------------------------------------------------------------------------
+side = st.sidebar
+side.title("Indicadores")
+indicador = side.radio("Elegí un indicador", list(DEFINICIONES.keys()))
+side.markdown("### Definición")
+side.info(DEFINICIONES[indicador])
+side.markdown("### Instrucciones")
+side.markdown(
     """
-1. Seleccioná el indicador arriba.
-2. Usá el _slider_ de fechas para acotar el rango.
-3. Hacé **zoom** o pasá el cursor por la línea para ver valores.
-4. Los datos se actualizan automáticamente cada día (fuentes INDEC, BCRA, MECON).
-"""
+    1. Seleccioná el indicador arriba.  
+    2. Ajustá el rango de fechas con el *slider*.  
+    3. Deslizá el cursor sobre la línea para ver valores puntuales.  
+    4. Los datos se actualizan una vez al día.  
+    """
 )
 
-# ----- Funciones auxiliares -------------------------------------------------- #
+# ---------------------------------------------------------------------------
+# FUNCIONES AUXILIARES
+# ---------------------------------------------------------------------------
+API_BASE = "https://apis.datos.gob.ar/series/api/series"
+
+IDS = {
+    # Todas series mensuales
+    "Producto interno bruto (PBI)": "10.3_VMATS_1993_M_36",  # EMAE base 1993 (indice)
+    "Inflación": "148.3_I2NG_2016_M_15",                     # IPC variación % mensual
+    "Desempleo": "101.1_IUT_T_0_0_30",                      # Desocupación trimestral (se interpolará)
+    "Tipo de cambio": "32.1_DOLAR_OFICIAL_0_0_16"            # TC fin de mes
+}
+
 @st.cache_data(ttl=86_400)
 def traer_serie_csv(serie_id: str) -> pd.DataFrame:
-    """Descarga una serie mensual desde apis.datos.gob.ar y devuelve un DataFrame."""
-    url = f"https://apis.datos.gob.ar/series/api/series/?ids={serie_id}&format=csv&collapse=month"
-    df = pd.read_csv(url, parse_dates=["indice_tiempo"])
+    """Descarga una serie desde apis.datos.gob.ar y devuelve DataFrame."""
+    url = f"{API_BASE}?ids={serie_id}&format=csv&collapse=month"
+    try:
+        df = pd.read_csv(url, parse_dates=["indice_tiempo"])
+    except HTTPError as e:
+        st.error(f"No se pudo descargar la serie {serie_id}: {e}")
+        return pd.DataFrame(columns=["fecha", "valor"])
     df.rename(columns={"indice_tiempo": "fecha", serie_id: "valor"}, inplace=True)
     return df.dropna()
 
+@st.cache_data(ttl=86_400)
 def cargar_datos(ind):
-    """Despacha la serie según el indicador seleccionado."""
-    if ind == "Producto interno bruto (PBI)":
-        # EMAE nivel general (serie base 2004=100)
-        return traer_serie_csv("143.3_EMAE_0_0_26")
-    if ind == "Inflación":
-        # IPC nivel general variación % mensual (base dic‑2016=100)
-        return traer_serie_csv("148.3_I2NG_2016_M_15")
-    if ind == "Desempleo":
-        # Tasa de desocupación urbana trimestral – se interpola a mensual para graficar
-        return traer_serie_csv("101.1_IUT_T_0_0_30")
-    if ind == "Tipo de cambio":
-        # Dólar oficial mayorista fin de mes
-        return traer_serie_csv("32.1_DOLAR_OFICIAL_0_0_16")
+    serie_id = IDS[ind]
+    df = traer_serie_csv(serie_id)
 
-# Carga de datos
+    # Tratamiento especial para Desempleo trimestral → mensual (pandas asfreq)  
+    if ind == "Desempleo" and not df.empty:
+        df.set_index("fecha", inplace=True)
+        df = df.asfreq("M")
+        df["valor"] = df["valor"].interpolate()
+        df.reset_index(inplace=True)
+    return df
+
+# ---------------------------------------------------------------------------
+# CARGA DE DATOS
+# ---------------------------------------------------------------------------
 with st.spinner("Descargando datos…"):
     df = cargar_datos(indicador)
 
-# ----- Selección de rango temporal ------------------------------------------ #
-min_date = df["fecha"].min()
-max_date = df["fecha"].max()
+if df.empty:
+    st.stop()
+
+# ---------------------------------------------------------------------------
+# SELECCIÓN DE RANGO
+# ---------------------------------------------------------------------------
+min_date, max_date = df["fecha"].min(), df["fecha"].max()
+
+def default_start():
+    yrs_back = 3 if indicador != "Inflación" else 1
+    try:
+        return max_date.replace(year=max_date.year - yrs_back)
+    except ValueError:
+        # Para febrero 29
+        return max_date - pd.DateOffset(years=yrs_back)
 
 inicio, fin = st.slider(
-    "Seleccioná el rango de fechas",
+    "Rango de fechas",
     min_value=min_date,
     max_value=max_date,
-    value=(max(min_date, max_date.replace(year=max_date.year-3)), max_date),
+    value=(default_start(), max_date),
     format="YYYY-MM"
 )
 
 mask = (df["fecha"] >= inicio) & (df["fecha"] <= fin)
-df_rango = df.loc[mask]
+subset = df.loc[mask]
 
-# ----- Visualización --------------------------------------------------------- #
-fig = px.line(
-    df_rango,
-    x="fecha",
-    y="valor",
-    title=f"{indicador} ({inicio.strftime('%Y-%m')} – {fin.strftime('%Y-%m')})",
-    markers=True
-)
-fig.update_layout(hovermode="x unified")
+# ---------------------------------------------------------------------------
+# VISUALIZACIÓN
+# ---------------------------------------------------------------------------
+fig = px.line(subset, x="fecha", y="valor",
+              title=f"{indicador} \u2013 {inicio.strftime('%Y-%m')} a {fin.strftime('%Y-%m')}",
+              markers=True)
+fig.update_layout(hovermode="x unified", xaxis_title="Fecha", yaxis_title="Valor", height=500)
 
 st.plotly_chart(fig, use_container_width=True)
 
-# Tabla de datos
+# Tabla
 with st.expander("Ver datos tabulados"):
-    st.dataframe(df_rango.rename(columns={"fecha": "Fecha", "valor": "Valor"}))
+    st.dataframe(subset.rename(columns={"fecha": "Fecha", "valor": "Valor"}))
+
+# Fuente
+st.caption("Fuente: APIs de datos.gob.ar (INDEC/BCRA) – actualizado al {}".format(max_date.strftime("%d-%m-%Y")))
