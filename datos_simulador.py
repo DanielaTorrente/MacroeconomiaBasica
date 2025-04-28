@@ -41,15 +41,30 @@ _raw = [
     ("122024",146.00,7694.01, 79.79,1020.71),
 ]
 
-def parse_mmYYYY(code: str) -> pd.Timestamp:
+def parse_mmYYYY(code: str):
+    """Convierte códigos como '112022' o '12023' a Timestamp.
+    Descarta valores cuyo año sea < 1900 para evitar ValueError."""
     code = code.strip()
-    if len(code) == 6:  # 112022
+    if len(code) == 6:  # ej. 112022
         m, y = int(code[0]), int(code[1:])
-    else:              # 12023 → 1|2023
+    else:              # ej. 12023
         m, y = int(code[:-4]), int(code[-4:])
+    if y < 1900 or m < 1 or m > 12:
+        return None  # se descartará luego
     return pd.Timestamp(year=y, month=m, day=1)
 
 rows = []
+for c, pbi, ipc, itcrm, tcn in _raw:
+    fecha = parse_mmYYYY(c)
+    if fecha is None:
+        continue
+    rows.append({
+        "Fecha": fecha,
+        "PBI": pbi,
+        "IPC": ipc,
+        "ITCRM": itcrm,
+        "TCN": tcn,
+    })
 for c, pbi, ipc, itcrm, tcn in _raw:
     rows.append({
         "Fecha": parse_mmYYYY(c),
