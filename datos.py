@@ -18,81 +18,44 @@ DEFINICIONES = {
 }
 
 # ---------------------------------------------------------------------------
-# 2. SERIES DISPONIBLES (ID oficiales datos.gob.ar)
+# 2. SERIES OFICIALES (API datos.gob.ar)
 # ---------------------------------------------------------------------------
 API_BASE = "https://apis.datos.gob.ar/series/api/series"
 SERIES = {
-    "Producto interno bruto (PBI)": "10.3_VMATS_1993_M_36",  # EMAE base 1993 (índice)
-    "Inflación": "148.3_I2NG_2016_M_15",                      # IPC variación % mensual
-    "Desempleo": "101.1_IUT_T_0_0_30",                       # Desocupación urbana trimestral
-    "Tipo de cambio": "32.1_DOLAR_OFICIAL_0_0_16"             # TC fin de mes
+    "Producto interno bruto (PBI)": "10.3_VMATS_1993_M_36",   # EMAE índice (mensual)
+    "Inflación": "148.3_I2NG_2016_M_15",                     # IPC variación % mensual
+    "Desempleo": "101.1_IUT_T_0_0_30",                      # Desocupación urbana (trimestral)
+    "Tipo de cambio": "32.1_DOLAR_OFICIAL_0_0_16"            # TC oficial fin de mes
 }
+
 DATA_DIR = pathlib.Path("data")
 DATA_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# 2.b Fallback interno (ahora cubre ENE‑2022 → ENE‑2025)
-# ---------------------------------------------------------------------------
-
-def _gen_series(start, end, start_val, step):
-    """Genera líneas CSV 'fecha,valor' mensuales."""
-    out = []
-    current = pd.Timestamp(start)
-    val = start_val
-    while current <= pd.Timestamp(end):
-        out.append(f"{current.strftime('%Y-%m-%d')},{val:.2f}\n")
-        current += relativedelta(months=1)
-        val += step
-    return "".join(out)
-
-# Generamos valores simulados (ascendentes) para el fallback
-import pandas as pd
-FALLBACK_CSVS = {
-    "10.3_VMATS_1993_M_36": "indice_tiempo,10.3_VMATS_1993_M_36\n" + _gen_series("2022-01-01", "2025-01-01", 160.0, 2.1),
-    "148.3_I2NG_2016_M_15": "indice_tiempo,148.3_I2NG_2016_M_15\n" + _gen_series("2022-01-01", "2025-01-01", 3.5, 0.6),
-    # Desempleo trimestral (cada 3 meses)
-    "101.1_IUT_T_0_0_30": "indice_tiempo,101.1_IUT_T_0_0_30\n" + "".join([
-        f"{pd.Timestamp('2022-01-01') + relativedelta(months=3*i):%Y-%m-%d},{7.0 + 0.05*i:.2f}\n" for i in range(0,13)
-    ]),
-    "32.1_DOLAR_OFICIAL_0_0_16": "indice_tiempo,32.1_DOLAR_OFICIAL_0_0_16\n" + _gen_series("2022-01-01", "2025-01-01", 110.0, 15.0)
-}
-
-# ---------------------------------------------------------------------------
-# 3. FUNCIONES AUXILIARES
+# 3. DESCARGA Y CARGA DE DATOS REALES
 # ---------------------------------------------------------------------------
 
 def url_csv(serie_id: str) -> str:
     return f"{API_BASE}?ids={serie_id}&format=csv&collapse=month"
 
 @st.cache_data(show_spinner=False, ttl=86_400)
-def traer_csv_online(serie_id: str) -> pd.DataFrame:
-    r = requests.get(url_csv(serie_id), timeout=20)
+def descargar_serie(serie_id: str) -> pd.DataFrame:
+    """Descarga la serie desde datos.gob.ar y la devuelve como DataFrame."""
+    r = requests.get(url_csv(serie_id), timeout=30)
     r.raise_for_status()
     return pd.read_csv(io.StringIO(r.text), parse_dates=["indice_tiempo"])
 
 @st.cache_data(show_spinner=False, ttl=86_400)
-def traer_csv_local(serie_id: str) -> pd.DataFrame:
+def cargar_csv_local(serie_id: str) -> pd.DataFrame:
     ruta = DATA_DIR / f"{serie_id}.csv"
     if not ruta.exists():
         return pd.DataFrame()
     return pd.read_csv(ruta, parse_dates=["indice_tiempo"])
 
 @st.cache_data(show_spinner=False, ttl=0)
-def descargar_y_guardar(serie_id: str) -> bool:
-    try:
-        df = traer_csv_online(serie_id)
-    except Exception:
-        return False
+def guardar_csv(df: pd.DataFrame, serie_id: str):
     ruta = DATA_DIR / f"{serie_id}.csv"
     df.to_csv(ruta, index=False)
-    return True
-
-@st.cache_data(show_spinner=False, ttl=0)
-def traer_fallback(serie_id: str) -> pd.DataFrame:
-    raw = FALLBACK_CSVS.get(serie_id, "")
-    if not raw:
-        return pd.DataFrame()
-    return pd.read_csv(io.StringIO(raw), parse_dates=["indice_tiempo"])
 
 # ---------------------------------------------------------------------------
 # 4. SIDEBAR
@@ -104,89 +67,74 @@ side.markdown("### Definición")
 side.info(DEFINICIONES[indicador])
 
 side.markdown("---")
-side.markdown("### Conexión de datos")
-modo = side.radio(
-    "Fuente de datos",
-    [
-        "Automático (online/local)",
-        "Solo local",
-        "Integrado (fallback)"
-    ],
-    index=0,
-)
-
 if side.button("⬇️ Descargar / actualizar todas las series"):
-    with st.spinner("Descargando series …"):
-        oks = [descargar_y_guardar(sid) for sid in SERIES.values()]
-    if all(oks):
-        side.success("Series descargadas correctamente ✔️")
-    else:
-        side.error("Alguna descarga falló. Verificá tu conexión.")
+    with st.spinner("Descargando series oficiales …"):
+        success = True
+        for sid in SERIES.values():
+            try:
+                df_tmp = descargar_serie(sid)
+                guardar_csv(df_tmp, sid)
+            except Exception as e:
+                success = False
+                st.error(f"No se pudo descargar {sid}: {e}")
+        if success:
+            side.success("✅ Series guardadas en ./data.")
 
-side.caption("Los CSV se guardan en ./data/. Si no tenés conexión ni archivos, usa la opción 'Integrado (fallback)'.")
+side.caption("La app usa primero los archivos locales en ./data/. Si faltan, intentará descargarlos del API oficial de datos.gob.ar (INDEC/BCRA). Se cachea 24 h.")
 
 # ---------------------------------------------------------------------------
-# 5. CARGA Y PREPARACIÓN DE DATOS
+# 5. OBTENER DATOS (PRIORIDAD: LOCAL → ONLINE)
 # ---------------------------------------------------------------------------
 serie_id = SERIES[indicador]
-
-if modo == "Solo local":
-    df = traer_csv_local(serie_id)
-elif modo == "Integrado (fallback)":
-    df = traer_fallback(serie_id)
-else:
-    df = traer_csv_local(serie_id)
-    if df.empty:
-        try:
-            df = traer_csv_online(serie_id)
-            (DATA_DIR / f"{serie_id}.csv").write_text(df.to_csv(index=False))
-        except Exception:
-            st.warning("No se pudo descargar en línea; usando fallback integrado si existe.")
-            df = traer_fallback(serie_id)
+df = cargar_csv_local(serie_id)
 
 if df.empty:
-    st.error("No se encontraron datos. Cambiá fuente o agrega los CSV.")
-    st.stop()
+    try:
+        df = descargar_serie(serie_id)
+        guardar_csv(df, serie_id)
+        st.toast("Serie descargada directamente del API oficial.")
+    except Exception as err:
+        st.error("No se pudo obtener la serie desde el API ni desde archivos locales. Verificá tu conexión o descargá las series con el botón del sidebar.")
+        st.stop()
 
-# Normalización
+# ---------------------------------------------------------------------------
+# 6. PREPARAR DATOS
+# ---------------------------------------------------------------------------
+
 df.rename(columns={"indice_tiempo": "fecha", serie_id: "valor"}, inplace=True)
 df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
 df.dropna(subset=["valor"], inplace=True)
 
 if indicador == "Desempleo":
+    # Convertir trimestral a mensual para que el slider sea uniforme
     df.set_index("fecha", inplace=True)
     df = df.asfreq("M")
     df["valor"] = df["valor"].interpolate(method="linear")
     df.reset_index(inplace=True)
 
 # ---------------------------------------------------------------------------
-# 6. CONTROL RANGO DE FECHAS
+# 7. SLIDER DE FECHAS
 # ---------------------------------------------------------------------------
-min_ts, max_ts = df["fecha"].min(), df["fecha"].max()
-min_date, max_date = min_ts.to_pydatetime(), max_ts.to_pydatetime()
+min_date, max_date = df["fecha"].min().to_pydatetime(), df["fecha"].max().to_pydatetime()
 
-yrs_back = 1 if indicador == "Inflación" else 3
-try:
-    default_start = max_date.replace(year=max_date.year - yrs_back)
-except ValueError:
-    default_start = max_date - relativedelta(years=yrs_back)
+years_back_default = 3 if indicador != "Inflación" else 1
+def_start = max_date - relativedelta(years=years_back_default)
 
 inicio, fin = st.slider(
     "Rango de fechas",
     min_value=min_date,
     max_value=max_date,
-    value=(default_start, max_date),
+    value=(def_start, max_date),
     format="YYYY-MM",
 )
 
-mask = (df["fecha"] >= pd.to_datetime(inicio)) & (df["fecha"] <= pd.to_datetime(fin))
-subset = df.loc[mask]
+subset = df[(df["fecha"] >= pd.to_datetime(inicio)) & (df["fecha"] <= pd.to_datetime(fin))]
 if subset.empty:
     st.warning("No hay datos para el rango seleccionado.")
     st.stop()
 
 # ---------------------------------------------------------------------------
-# 7. VISUALIZACIÓN
+# 8. GRÁFICO
 # ---------------------------------------------------------------------------
 fig = px.line(
     subset,
@@ -202,9 +150,4 @@ st.plotly_chart(fig, use_container_width=True)
 with st.expander("Ver datos tabulados"):
     st.dataframe(subset.rename(columns={"fecha": "Fecha", "valor": "Valor"}))
 
-st.caption(
-    "Fuente original: APIs de datos.gob.ar (INDEC/BCRA). "
-    "Si no hay conexión ni archivos, se muestra un conjunto de datos integrado de ejemplo (2022‑01→2025‑01)."
-)
-
-
+st.caption("Fuente: APIs oficiales de datos.gob.ar (INDEC • BCRA). Las series se descargan y almacenan localmente para trabajar sin conexión.")
