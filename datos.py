@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import requests
+import requests, io, os
 from urllib.error import HTTPError
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
@@ -26,13 +26,18 @@ side.title("Indicadores")
 indicador = side.radio("Elegí un indicador", list(DEFINICIONES.keys()))
 side.markdown("### Definición")
 side.info(DEFINICIONES[indicador])
+
+# Conexión
+offline = side.checkbox("Modo sin conexión (usar CSV locales 🗎)")
+
 side.markdown("### Instrucciones")
 side.markdown(
     """
     1. Seleccioná el indicador arriba.  
     2. Ajustá el rango de fechas con el *slider*.  
     3. Deslizá el cursor sobre la línea para ver valores puntuales.  
-    4. Los datos se actualizan una vez al día.  
+    4. Los datos se actualizan una vez al día cuando hay conexión.  
+    5. Si la descarga falla, activá **Modo sin conexión** y guardá el CSV en la carpeta *data/*.  
     """
 )
 
@@ -50,26 +55,34 @@ IDS = {
 }
 
 @st.cache_data(ttl=86_400)
-def traer_serie_csv(serie_id: str) -> pd.DataFrame:
-    """Descarga una serie desde apis.datos.gob.ar y devuelve DataFrame."""
-    url = f"{API_BASE}?ids={serie_id}&format=csv&collapse=month"
-    try:
-        df = pd.read_csv(url, parse_dates=["indice_tiempo"])
-    except HTTPError as e:
-        st.error(f"No se pudo descargar la serie {serie_id}: {e}")
-        return pd.DataFrame(columns=["fecha", "valor"])
+def traer_serie(serie_id: str, sin_conexion: bool) -> pd.DataFrame:
+    """Devuelve DataFrame con columnas fecha, valor. Si *sin_conexion* lee ./data/serie_id.csv"""
+    if sin_conexion:
+        ruta = os.path.join("data", f"{serie_id}.csv")
+        if not os.path.exists(ruta):
+            st.error(f"No encontré {ruta}. Descargá primero el CSV manualmente y colocalo en la carpeta data/.")
+            return pd.DataFrame(columns=["fecha", "valor"])
+        df = pd.read_csv(ruta, parse_dates=["indice_tiempo"])
+    else:
+        url = f"{API_BASE}?ids={serie_id}&format=csv&collapse=month"
+        try:
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            df = pd.read_csv(io.StringIO(r.text), parse_dates=["indice_tiempo"])
+        except Exception as e:
+            st.warning("Fallo la descarga desde la API. Activá 'Modo sin conexión' y usá un CSV local.")
+            st.exception(e)
+            return pd.DataFrame(columns=["fecha", "valor"])
     df.rename(columns={"indice_tiempo": "fecha", serie_id: "valor"}, inplace=True)
-    # Asegurar numérico
     df["valor"] = pd.to_numeric(df["valor"], errors="coerce")
     df.dropna(subset=["valor"], inplace=True)
     return df
 
 @st.cache_data(ttl=86_400)
-def cargar_datos(ind):
+def cargar_datos(ind, sin_conexion=False):
     serie_id = IDS[ind]
-    df = traer_serie_csv(serie_id)
-
-    # Tratamiento especial para Desempleo trimestral → mensual
+    df = traer_serie(serie_id, sin_conexion)
+    # Desempleo trimestral → mensual
     if ind == "Desempleo" and not df.empty:
         df.set_index("fecha", inplace=True)
         df = df.asfreq("M")
@@ -80,22 +93,18 @@ def cargar_datos(ind):
 # ---------------------------------------------------------------------------
 # CARGA DE DATOS
 # ---------------------------------------------------------------------------
-with st.spinner("Descargando datos…"):
-    df = cargar_datos(indicador)
+with st.spinner("Cargando datos…"):
+    df = cargar_datos(indicador, offline)
 
 if df.empty:
     st.stop()
 
 # ---------------------------------------------------------------------------
-# CONVERSIÓN DE FECHAS A datetime (para evitar KeyError en slider)
+# CONTROL DE FECHAS
 # ---------------------------------------------------------------------------
-min_ts = df["fecha"].min()
-max_ts = df["fecha"].max()
+min_ts, max_ts = df["fecha"].min(), df["fecha"].max()
+min_date, max_date = min_ts.to_pydatetime(), max_ts.to_pydatetime()
 
-min_date = min_ts.to_pydatetime()
-max_date = max_ts.to_pydatetime()
-
-# Valor inicial (3 años atrás, 1 si Inflación)
 yrs_back = 1 if indicador == "Inflación" else 3
 try:
     default_start = max_date.replace(year=max_date.year - yrs_back)
@@ -127,9 +136,8 @@ fig.update_layout(hovermode="x unified", xaxis_title="Fecha", yaxis_title="Valor
 
 st.plotly_chart(fig, use_container_width=True)
 
-# Tabla detallada
 with st.expander("Ver datos tabulados"):
     st.dataframe(subset.rename(columns={"fecha": "Fecha", "valor": "Valor"}))
 
-# Fuente
-st.caption(f"Fuente: APIs de datos.gob.ar (INDEC/BCRA) – actualizado al {max_date.strftime('%d-%m-%Y')}")
+st.caption("Fuente: APIs de datos.gob.ar (INDEC/BCRA) – actualización diaria cuando hay conexión")
+
