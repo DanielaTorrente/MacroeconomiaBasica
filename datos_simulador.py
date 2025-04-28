@@ -41,14 +41,14 @@ _raw = [
 ]
 
 def parse_mmYYYY(code: str):
-    """Convierte cadenas como '112022' a Timestamp (1/2022)."""
-    code = code.strip()
-    if len(code) == 6:          # 112022
-        m, y = int(code[0]), int(code[1:])
-    else:                       # 12023 → 1/2023
-        m, y = int(code[:-4]), int(code[-4:])
-    # descartar años < 1900
-    if y < 1900 or m < 1 or m > 12:
+    """Convierte códigos como '112.022', '12023', '102024' → Timestamp.
+    • Elimina cualquier carácter no numérico.
+    • Descarta valores con mes fuera de 1‑12 o año < 1900."""
+    digits = ''.join(ch for ch in code if ch.isdigit())
+    if len(digits) < 5:  # se necesitan al menos 1 dígito de mes + 4 de año
+        return None
+    m, y = int(digits[:-4]), int(digits[-4:])
+    if not (1 <= m <= 12) or y < 1900:
         return None
     return pd.Timestamp(year=y, month=m, day=1)
 
