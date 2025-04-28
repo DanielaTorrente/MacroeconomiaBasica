@@ -1,148 +1,142 @@
-# app.py — Simulador con datos reales (ENE 2022 → ENE 2024)
+# tablero_macroeconomia.py — Tablero interactivo 2022‑2024
 # --------------------------------------------------------------------
-# Copia‑pega este archivo único en tu repo y corre:
-#   pip install streamlit pandas plotly statsmodels
-#   streamlit run app.py
-# No necesitas ningún Excel: los valores se embeben aquí mismo.
+# Copia este archivo en tu proyecto y ejecuta:
+#   pip install streamlit pandas plotly
+#   streamlit run tablero_macroeconomia.py
+# No requiere archivos externos: los valores se embeben aquí.
 
 import pandas as pd
 import streamlit as st
-import plotly.express as px
-import statsmodels.api as sm
+import plotly.graph_objects as go
 
 # ------------------------------------------------------------
-# 1. Datos embebidos (24 observaciones)
+# 1. Datos reales suministrados (ene‑2022 → dic‑2024)
 # ------------------------------------------------------------
-FECHAS = [
-    "2022-01-01", "2022-02-01", "2022-03-01", "2022-04-01", "2022-05-01", "2022-06-01", "2022-07-01", "2022-08-01", "2022-09-01", "2022-10-01", "2022-11-01", "2022-12-01", 
-    "2023-01-01", "2023-02-01", "2023-03-01", "2023-04-01", "2023-05-01", "2023-06-01", "2023-07-01", "2023-08-01", "2023-09-01", "2023-10-01", "2023-11-01", "2024-01-01",
+_raw = [
+    ("112022",146.50,1079.28, 90.10, 162.12),
+    ("122022",144.50,1134.59, 93.21, 172.90),
+    ("12023",143.00,1202.98, 95.14, 182.24),
+    ("22023",137.60,1282.71, 94.77, 191.89),
+    ("32023",155.40,1381.16, 93.59, 203.11),
+    ("42023",149.10,1497.21, 93.81, 216.56),
+    ("52023",152.70,1613.59, 93.05, 231.19),
+    ("62023",151.60,1709.61, 93.96, 248.76),
+    ("72023",149.00,1818.08, 95.85, 266.46),
+    ("82023",150.70,2044.28,104.82, 322.13),
+    ("92023",147.50,2304.92,100.67, 350.00),
+    ("102023",146.70,2496.27, 89.63, 350.02),
+    ("112023",145.50,2816.06, 83.19, 353.84),
+    ("121899",138.40,3533.19,124.87, 641.99),
+    ("12024",137.30,4261.53,132.78, 818.35),
+    ("22024",133.80,4825.79,115.76, 834.91),
+    ("32024",142.40,5357.09,105.87, 850.34),
+    ("42024",145.50,5830.23, 97.02, 868.96),
+    ("52024",154.80,6073.72, 93.43, 886.86),
+    ("62024",145.40,6351.71, 89.90, 903.78),
+    ("72024",148.20,6607.75, 87.88, 923.77),
+    ("82024",146.00,6883.44, 87.16, 942.92),
+    ("92024",143.70,7122.24, 86.05, 961.83),
+    ("102024",146.00,7313.95, 84.05, 981.57),
+    ("112024",146.10,7491.43, 81.75,1001.84),
+    ("122024",146.00,7694.01, 79.79,1020.71),
 ]
 
-PBI = [
-    139.5, 138.0, 153.9, 156.1, 163.1, 163.9, 164.1, 164.1, 160.4, 159.9, 158.4, 158.8, 
-    153.3, 155.1, 155.4, 149.1, 152.7, 151.6, 149.0, 150.7, 147.5, 146.7, 145.5, 137.3,
-]
+def parse_mmYYYY(code: str) -> pd.Timestamp:
+    code = code.strip()
+    if len(code) == 6:  # 112022
+        m, y = int(code[0]), int(code[1:])
+    else:              # 12023 → 1|2023
+        m, y = int(code[:-4]), int(code[-4:])
+    return pd.Timestamp(year=y, month=m, day=1)
 
-IPC = [
-    605.0317, 633.4341, 676.0566, 716.9399, 753.147, 790.0339, 848.1981, 906.0927, 961.026, 1021.4317, 1074.5121, 1130.1678,
-    1203.0185, 1262.3126, 1381.1601, 1497.2147, 1613.5895, 1709.6115, 1818.0838, 2044.2832, 2304.9242, 2496.273, 2816.0628, 4261.5324,
-]
+rows = []
+for c, pbi, ipc, itcrm, tcn in _raw:
+    rows.append({
+        "Fecha": parse_mmYYYY(c),
+        "PBI": pbi,
+        "IPC": ipc,
+        "ITCRM": itcrm,
+        "TCN": tcn,
+    })
 
-TCN = [
-    103.9846, 106.3071, 109.4585, 113.3345, 117.7737, 122.6234, 129.7928, 137.5014, 144.5326, 152.8706, 160.1581, 170.9467,
-    182.4677, 192.9011, 203.1055, 216.5559, 231.1908, 248.7617, 266.4647, 322.1341, 349.998, 350.0204, 353.8404, 818.3455,
-]
-
-ITCRM = [
-    101.986673, 102.691842, 101.306247, 99.81559, 96.439443, 98.453567, 99.747081, 101.563098, 103.669433, 106.696137, 109.341478, 112.468594,
-    113.955688, 111.881694, 93.588477, 93.80799, 93.048879, 93.964437, 95.847331, 104.82483, 100.667193, 89.628422, 83.19384, 132.780097,
-]
-
-DF = pd.DataFrame({
-    "fecha": pd.to_datetime(FECHAS),
-    "PBI": PBI,
-    "IPC_%": IPC,
-    "TCN": TCN,
-    "ITCRM": ITCRM,
-})
+df = pd.DataFrame(rows).sort_values("Fecha").reset_index(drop=True)
 
 # ------------------------------------------------------------
-# 2. Streamlit — configuración
+# 2. Streamlit — configuración y textos
 # ------------------------------------------------------------
-st.set_page_config(page_title="Simulador Macro 2022-2024", layout="wide")
-st.title("🌎 Tablero Interactivo de Indicadores (2022‑2024)")
-
-st.markdown("""
-### Definiciones rápidas
-| Sigla | Descripción | Fuente |
-|-------|-------------|--------|
-| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria del PIB. | INDEC |
-| **IPC** | Índice de Precios al Consumidor; mide la variación mes a mes del nivel general de precios. | INDEC |
-| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar estadounidense). | BCRA |
-| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; compara el peso frente a las monedas de los principales socios comerciales. | BCRA |
-
----
-### Cómo usar este tablero
-1. **Exploración**: elige un indicador para ver su serie 2022‑2024.
-2. **Simulador**: aplica shocks porcentuales a IPC, TCN e ITCRM y observa el impacto estimado sobre el EMAE (PBI).
-3. **Descarga**: puedes exportar la tabla filtrada desde la vista de exploración.
-
-> ⚠️ *Este tablero es didáctico.* El modelo lineal no implica causalidad y omite rezagos.
-""")
-### Definiciones rápidas
-| Sigla | Descripción | Fuente |
-|-------|-------------|--------|
-| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria del PIB. | INDEC |
-| **IPC** | Índice de Precios al Consumidor; mide la variación mes a mes del nivel general de precios. | INDEC |
-| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar estadounidense). | BCRA |
-| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; compara el peso frente a las monedas de los principales socios comerciales. | BCRA |
-""")
-"Simulador Macroeconómico (ene‑2022 → ene‑2024)")
+st.set_page_config(page_title="Tablero Macro 2022‑2024", layout="wide")
+st.title("🌎 Tablero Interactivo de Indicadores Macroeconómicos (2022‑2024)")
 
 st.markdown(
     """
-**Fuente:** Hoja *datos* de *Series argentina (2).xlsx* — columnas EMAE, IPC, TCN, ITCRM.
-Dataset embebido para evitar dependencias externas.
+### Definiciones
+| Sigla | Descripción | Fuente |
+|-------|-------------|--------|
+| **EMAE** | Estimador Mensual de Actividad Económica; aproxima la trayectoria mensual del PIB. | INDEC |
+| **IPC** | Índice de Precios al Consumidor; variación del nivel general de precios. | INDEC |
+| **TCN** | Tipo de Cambio Nominal promedio mensual (pesos por dólar). | BCRA |
+| **ITCRM** | Índice de Tipo de Cambio Real Multilateral; mide competitividad frente a socios. | BCRA |
 
-### Cómo funciona el simulador
-Usamos el modelo lineal didáctico:
-```math
-PBI_t = β₀ + β₁·IPC_t + β₂·TCN_t + β₃·ITCRM_t
-```
-Sin rezagos ni efectos no lineales; sirve solo para análisis de sensibilidad *ceteris‑paribus*.
+---
+**Cómo usar el tablero**
+1. Selecciona uno o dos indicadores.
+2. Ajusta el rango de fechas.
+3. Explora el gráfico interactivo y descarga la tabla filtrada.
 """,
-    unsafe_allow_html=True)
+    unsafe_allow_html=True,
+)
 
-modo = st.sidebar.radio("Modo", ["Exploración", "Simulador"], index=0)
+# ------------------------------------------------------------
+# 3. Interactividad
+# ------------------------------------------------------------
+indicadores = ["PBI", "IPC", "ITCRM", "TCN"]
+ind1 = st.selectbox("🔹 Indicador 1", indicadores)
+ind2 = st.selectbox("🔹 Indicador 2 (opcional)", ["Ninguno"] + indicadores)
 
-# 3. Exploración ------------------------------------------------------------
-if modo == "Exploración":
-    var = st.selectbox("Variable", ["PBI", "IPC_%", "TCN", "ITCRM"])
-    fig = px.line(DF, x="fecha", y=var, markers=True, title=f"Evolución de {var}")
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(DF.set_index("fecha"))
+rango = st.slider(
+    "🗓️ Rango de fechas",
+    min_value=df["Fecha"].min().to_pydatetime(),
+    max_value=df["Fecha"].max().to_pydatetime(),
+    value=(df["Fecha"].min().to_pydatetime(), df["Fecha"].max().to_pydatetime()),
+)
 
-# 4. Simulador --------------------------------------------------------------
-else:
-    # Modelo lineal
-    X = sm.add_constant(DF[["IPC_%", "TCN", "ITCRM"]])
-    modelo = sm.OLS(DF["PBI"], X).fit()
+df_filt = df[(df["Fecha"] >= rango[0]) & (df["Fecha"] <= rango[1])]
 
-    base_row = DF.iloc[-1]  # 2024‑01
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df_filt["Fecha"], y=df_filt[ind1], name=ind1, yaxis="y1"))
+if ind2 != "Ninguno":
+    fig.add_trace(go.Scatter(x=df_filt["Fecha"], y=df_filt[ind2], name=ind2, yaxis="y2"))
 
-    st.write("### Valores históricos (ene‑2024)")
-    st.write(base_row[["PBI", "IPC_%", "TCN", "ITCRM"]])
+fig.update_layout(
+    title=f"Evolución de {ind1}" + (f" y {ind2}" if ind2 != "Ninguno" else ""),
+    xaxis_title="Fecha",
+    yaxis=dict(title=ind1),
+    yaxis2=dict(title=ind2, overlaying="y", side="right") if ind2 != "Ninguno" else None,
+    legend=dict(x=0.01, y=0.99),
+    template="plotly_white",
+)
 
-    col1, col2, col3 = st.columns(3)
-    d_ipc  = col1.slider("Shock IPC (%)",  -30.0, 30.0, 0.0, 0.5)
-    d_tcn  = col2.slider("Shock TCN (%)",  -30.0, 30.0, 0.0, 0.5)
-    d_itcr = col3.slider("Shock ITCRM (%)", -30.0, 30.0, 0.0, 0.5)
+st.plotly_chart(fig, use_container_width=True)
 
-    X_new = [1,
-             base_row["IPC_%"] * (1 + d_ipc/100),
-             base_row["TCN"]    * (1 + d_tcn/100),
-             base_row["ITCRM"] * (1 + d_itcr/100)]
+st.dataframe(df_filt, height=250)
 
-    pbi_sim = float(modelo.predict([X_new]))
-    diff_pct = (pbi_sim - base_row["PBI"]) / base_row["PBI"] * 100
+st.download_button(
+    "📥 Descargar CSV filtrado",
+    data=df_filt.to_csv(index=False),
+    file_name="indicadores_filtrados.csv",
+    mime="text/csv",
+)
 
-    st.metric("PBI simulado (ene‑2024)", f"{pbi_sim:.2f}", f"{diff_pct:+.2f}% vs histórico")
-
-    fig2 = px.bar(x=["Histórico", "Simulado"],
-                  y=[base_row["PBI"], pbi_sim],
-                  text=[f"{base_row['PBI']:.1f}", f"{pbi_sim:.1f}"],
-                  labels={"x": "", "y": "PBI"})
-    fig2.update_traces(textposition="outside")
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.info("Ejemplo didáctico — interpretaciones con cautela.")
-
-# -------- Consignas para reflexionar -------------------------
-st.markdown("""
-### ✏️ Consignas de análisis
-1. ¿Qué patrón observas en la trayectoria del EMAE entre 2022 y 2024?
-2. ¿Cómo reacciona el EMAE en el simulador ante un aumento sostenido del IPC?
-3. ¿Qué sucede si devalúas 15 % el TCN manteniendo constante el IPC? ¿Y si apreciás el ITCRM?
-4. Relaciona la evolución del ITCRM con los picos de inflación: ¿encuentras coincidencias notables?
-5. Propón un shock combinado (IPC + TCN) y discute si el resultado del EMAE te parece plausible.
-""")
+# ------------------------------------------------------------
+# 4. Consignas de análisis
+# ------------------------------------------------------------
+st.markdown(
+    """
+### ✏️ Consignas
+1. Describe la tendencia del EMAE entre 2022 y 2024.
+2. ¿Observas correlación visible entre IPC y TCN?
+3. Al focalizar en 2023‑08 ↔ 2023‑11, ¿qué sucede con ITCRM y el tipo de cambio?
+4. ¿Qué podría explicar el salto de IPC en 2023‑11?
+5. Descarga el CSV filtrado y calcula la variación interanual del IPC.
+"""
+)
