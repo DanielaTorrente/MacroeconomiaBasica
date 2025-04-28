@@ -66,8 +66,16 @@ for c, pbi, ipc, itcrm, tcn in _raw:
         "TCN": tcn,
     })
 for c, pbi, ipc, itcrm, tcn in _raw:
+    fecha = parse_mmYYYY(c)
+    if fecha is None:
+        continue
     rows.append({
-        "Fecha": parse_mmYYYY(c),
+        "Fecha": fecha,
+        "PBI": pbi,
+        "IPC": ipc,
+        "ITCRM": itcrm,
+        "TCN": tcn,
+    }),
         "PBI": pbi,
         "IPC": ipc,
         "ITCRM": itcrm,
