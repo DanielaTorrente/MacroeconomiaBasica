@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 # === Encabezado ===
  
-**Cátedra:** Macroeconomía Básica  
+
 
 **Docentes:** Prof. Daniela Torrente y Prof. Omar Quirelli
 """)
