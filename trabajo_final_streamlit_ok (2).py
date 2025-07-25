@@ -3,14 +3,6 @@ import streamlit as st
 import numpy as np
 import matplotlib.pyplot as plt
 
-# === Encabezado ===
- 
-
-
-**Docentes:** Prof. Daniela Torrente y Prof. Omar Quirelli
-""")
-st.markdown("---")
-
 # === Objetivos ===
 st.header("🎯 Objetivos de la actividad")
 st.markdown("""
