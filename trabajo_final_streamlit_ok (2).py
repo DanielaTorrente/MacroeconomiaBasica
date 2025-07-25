@@ -6,8 +6,7 @@ import matplotlib.pyplot as plt
 # === Encabezado ===
  
 **Cátedra:** Macroeconomía Básica  
-**Carreras:** Contador Público, Lic. en Economía, Lic. en Administración  
-**Facultad:** Ciencias Económicas – UNNE  
+
 **Docentes:** Prof. Daniela Torrente y Prof. Omar Quirelli
 """)
 st.markdown("---")
