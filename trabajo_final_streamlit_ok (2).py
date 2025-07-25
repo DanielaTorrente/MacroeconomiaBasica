@@ -4,9 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # === Encabezado ===
-st.title("📘 Trabajo Final – Curso de Posgrado")
-st.markdown("""
-**Curso:** Incorporando Python e Inteligencia Artificial en Nuestras Cátedras  
+ 
 **Cátedra:** Macroeconomía Básica  
 **Carreras:** Contador Público, Lic. en Economía, Lic. en Administración  
 **Facultad:** Ciencias Económicas – UNNE  
